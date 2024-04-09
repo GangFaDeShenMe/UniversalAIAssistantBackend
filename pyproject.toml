@@ -10,7 +10,11 @@ python = "^3.11"
 fastapi = "^0.110.1"
 uvicorn = "^0.29.0"
 loguru = "^0.7.2"
-
+toml = "^0.10.2"
+charset-normalizer = "^3.3.2"
+sqlalchemy = "^2.0.29"
+uuid = "^1.30"
+aiosqlite = "^0.20.0"
 
 [build-system]
 requires = ["poetry-core"]
