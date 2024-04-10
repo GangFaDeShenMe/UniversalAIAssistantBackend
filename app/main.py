@@ -5,8 +5,8 @@ from fastapi import FastAPI, APIRouter
 from loguru import logger
 
 from app.endpoints.router import router
-from .config import config
-from .database.connector import sessionmanager, create_tables
+from app.config import config
+from app.database.connector import (sessionmanager, create_tables)
 
 root_router = APIRouter()
 

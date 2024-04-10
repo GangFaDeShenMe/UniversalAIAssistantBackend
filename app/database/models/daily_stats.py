@@ -3,13 +3,12 @@ from datetime import date
 from sqlalchemy import Column, Integer, Date, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..connector import Base
+from app.database.connector import Base
 
 
 class DailyStats(Base):
     __tablename__ = 'stats'
 
-    id = Column(Integer, primary_key=True)
     date_interval = Column(Date, nullable=False, default=date.today())
 
     # --- Platform ---
@@ -25,6 +24,9 @@ class DailyStats(Base):
     # -- Stable Diffusion --
     sd_images_generated = Column(Integer, default=0, nullable=False)
     # ...
+
+    # --- Billing ---
+    invite_code_binds = Column(Integer, default=0, nullable=False)
 
     # --- Billing ---
     recharged_amount_in_cents = Column(Integer, default=0, nullable=False)

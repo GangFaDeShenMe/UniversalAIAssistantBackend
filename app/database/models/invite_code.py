@@ -4,17 +4,18 @@ from typing import Union
 
 from sqlalchemy import Column, Integer, String, ForeignKey, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import relationship
 
-from ..base import Base
-from ...config import config
+from app.database.base import Base
+from app.config import config
 
 
 class InviteCode(Base):
     __tablename__ = 'invite_codes'
 
-    id = Column(Integer, primary_key=True)
     code = Column(String(10), nullable=False, unique=True, index=True)
     owner_id = Column(Integer, ForeignKey('users.id'))
+    owner = relationship("User", back_populates="invite_code", foreign_keys=[owner_id])
     use_count = Column(Integer, default=0, nullable=False)
 
     def __init__(self, user, *args, **kwargs):
@@ -23,18 +24,34 @@ class InviteCode(Base):
 
     @classmethod
     async def create(cls, session: AsyncSession, user) -> "InviteCode":
-        invite_code = cls(session=session, user=user)
+        invite_code = cls(user=user)
         invite_code.code = await cls.generate_code(session=session)
         session.add(invite_code)
         return invite_code
 
     @classmethod
-    async def get(cls, session: AsyncSession, id: int = None, code: str = None) -> Union["InviteCode", None]:
+    async def get(
+            cls,
+            session: AsyncSession,
+            id: int = None,
+            code: str = None,
+            owner=None
+    ) -> Union["InviteCode", None]:
+        """
+
+        :param session:
+        :param id:
+        :param code:
+        :param owner:
+        :return:
+        """
         stmt = select(cls)
         if id is not None:
             stmt = stmt.filter_by(id=id)
         if code is not None:
             stmt = stmt.filter_by(code=code)
+        if owner is not None:
+            stmt = stmt.filter_by(owner_id=owner.id)
 
         result = await session.execute(stmt)
         return result.scalars().first()

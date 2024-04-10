@@ -4,14 +4,14 @@ from typing import Any, AsyncIterator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncConnection
 
 from app.database.base import Base
-from .models import assistant, invite_code, thread, user
-from ..config import config
+from app.database.models import assistant, daily_stats, invite_code, thread, user
+from app.config import config
 
 
 class DatabaseSessionManager:
     def __init__(self, host: str, engine_kwargs: dict[str, Any] = {}):
         self._engine = create_async_engine(host, **engine_kwargs)
-        self._sessionmaker = async_sessionmaker(autocommit=False, bind=self._engine)
+        self._sessionmaker = async_sessionmaker(autocommit=False, bind=self._engine, expire_on_commit=False)
 
     async def close(self):
         if self._engine is None:
@@ -48,7 +48,12 @@ class DatabaseSessionManager:
             await session.close()
 
 
-sessionmanager = DatabaseSessionManager(config.db.url)
+sessionmanager = DatabaseSessionManager(
+    host=config.db.url,
+    engine_kwargs={
+        "pool_recycle": 60 * 30
+    }
+)
 
 
 async def get_db_session():
@@ -59,3 +64,8 @@ async def get_db_session():
 async def create_tables():
     async with sessionmanager._engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def drop_tables():
+    async with sessionmanager._engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)

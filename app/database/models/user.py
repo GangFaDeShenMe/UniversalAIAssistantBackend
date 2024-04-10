@@ -6,12 +6,12 @@ from typing import Optional, Union, List
 from loguru import logger
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Interval, ForeignKey, UUID, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, selectinload, Mapped
 
-from ..base import Base
-from .daily_stats import DailyStats
-from .invite_code import InviteCode
-from ...config import config
+from app.database.base import Base
+from app.database.models.daily_stats import DailyStats
+from app.database.models.invite_code import InviteCode
+from app.config import config
 
 
 class User(Base):
@@ -20,7 +20,7 @@ class User(Base):
     # --- Identifying ---
     # -- Internal --
     id = Column(Integer, primary_key=True)
-    uuid = Column(UUID, default=str(uuid.uuid4()), index=True)
+    uuid = Column(UUID, index=True, unique=True, nullable=False)
     # -- External --
     qq_number = Column(String(15), nullable=True, index=True)
     wechat_id = Column(String(15), nullable=True, index=True)
@@ -41,14 +41,13 @@ class User(Base):
 
     # --- Invitation ---
     invite_code_id = Column(Integer, ForeignKey('invite_codes.id'))
-    invite_code = relationship("InviteCode", backref="user_of_code", uselist=False)
+    invite_code = relationship("InviteCode", back_populates="owner", uselist=False,
+                               foreign_keys="[InviteCode.owner_id]")
     inviter_id = Column(Integer, ForeignKey('users.id'))
-    inviter = relationship("User", back_populates="invitees")
+    inviter = relationship("User", remote_side=[id], back_populates="invitees", uselist=False)
     invitees = relationship("User", back_populates="inviter")
 
     # --- Stats ---
-    created_time = Column(DateTime, default=datetime.utcnow)
-    updated_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     total_token_usage = Column(Integer, default=0, nullable=False)
     total_recharged_amount_in_cents = Column(Integer, default=0, nullable=False)
     total_bonus_amount_in_cents = Column(Integer, default=0, nullable=False)
@@ -78,7 +77,7 @@ class User(Base):
         if user:
             raise cls.UserAlreadyExistsError(f"Attempted to create duplicated user with {kwargs}")
         try:
-            user = cls(**kwargs)
+            user = cls(**kwargs, uuid=uuid.uuid4())
             session.add(user)
             invite_code = await InviteCode.create(session=session, user=user)
             user.invite_code = invite_code
@@ -124,19 +123,9 @@ class User(Base):
             return None
 
         query = select(cls).where(*conditions)
+
         result = await session.execute(query)
         return result.scalars().first()
-
-    async def get_invitees(self, session: AsyncSession) -> List["User"]:
-        """
-        :param session:
-        :return: A list of User instances that are invitees of the current user.
-        """
-        stmt = select(User).where(User.inviter_id == self.id)
-
-        result = await session.execute(stmt)
-
-        return result.scalars().all()
 
     async def charge(self, session: AsyncSession, amount: int, type: str = "charge", ) -> bool:
         """
@@ -239,7 +228,7 @@ class User(Base):
             await session.rollback()
             return False
 
-    async def bind_invite_code(self, session: AsyncSession, code: str) -> bool:
+    async def bind_invite_code(self, session: AsyncSession, code: str | InviteCode) -> bool:
         """
         :param session:
         :param code:
@@ -248,7 +237,10 @@ class User(Base):
         if self.inviter_id:
             raise ValueError("Cannot repeatedly bind")
 
-        invite_code = await InviteCode.get(session=session, code=code)
+        if isinstance(code, str):
+            invite_code = await InviteCode.get(session=session, code=code)
+        else:
+            invite_code = code
         if not invite_code:
             raise ValueError("Invalid code")
 
@@ -258,13 +250,16 @@ class User(Base):
         if invite_code.owner_id == self.id:
             raise ValueError("Cannot bind self")
 
-        inviter = await User.get(id=invite_code.owner_id, session=session)
+        inviter = invite_code.owner
 
-        if inviter in await self.get_invitees():
+        if inviter in await self.awaitable_attrs.invitees:
             raise ValueError("Cannot bind own invitees")
 
         self.inviter = inviter
-        inviter.invitees.append(self)
+        inviter_invitees = await inviter.awaitable_attrs.invitees
+        inviter_invitees.append(self)
+
+        inviter.invitees = inviter_invitees
 
         self.inviter_id = invite_code.owner_id
         invite_code.use_count += 1
@@ -278,5 +273,8 @@ class User(Base):
                 session=session, type="bonus",
                 amount=config.referral.invitee_cash_back_amount_when_bind_in_cents
             )
+        stats = await DailyStats.get_or_create(session=session)
+        stats.invite_code_binds += 1
+
         await session.commit()
         return True
