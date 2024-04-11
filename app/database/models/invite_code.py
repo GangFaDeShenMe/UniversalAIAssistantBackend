@@ -15,12 +15,35 @@ class InviteCode(Base):
 
     code = Column(String(10), nullable=False, unique=True, index=True)
     owner_id = Column(Integer, ForeignKey('users.id'))
-    owner = relationship("User", back_populates="invite_code", foreign_keys=[owner_id])
+    owner = relationship("User", back_populates="invite_code", foreign_keys='InviteCode.owner_id')
     use_count = Column(Integer, default=0, nullable=False)
 
-    def __init__(self, user, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, user, **kwargs):
+        super().__init__(**kwargs)
         self.owner_id = user.id
+
+    def __str__(self):
+        return self.code
+
+    class InviteCodeError(Exception):
+        def __init__(self, msg):
+            super().__init__("Internal Invite Code Error" if not msg else msg)
+
+    class NoSuchCodeError(InviteCodeError):
+        def __init__(self, code: str):
+            super().__init__(f"Code {code} is invalid")
+
+    class MaxAllowedBindingCountExceededError(InviteCodeError):
+        def __init__(self):
+            super().__init__(f"Max allowed code binding count exceeded")
+
+    class BindCodeOwnerConflictError(InviteCodeError):
+        def __init__(self):
+            super().__init__("Cannot bind code owner")
+
+    class CircularBindingError(InviteCodeError):
+        def __init__(self):
+            super().__init__("Cannot bind own invitees")
 
     @classmethod
     async def create(cls, session: AsyncSession, user) -> "InviteCode":
@@ -62,6 +85,3 @@ class InviteCode(Base):
             code = ''.join(random.choices(string.ascii_letters + string.digits, k=config.referral.invite_code_length))
             if not await cls.get(session, code=code):
                 return code
-
-    def __str__(self):
-        return self.code

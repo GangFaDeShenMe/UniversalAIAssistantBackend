@@ -1,3 +1,8 @@
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -35,4 +40,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(root_router)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=config.system.host, port=config.system.port)
+    try:
+        uvicorn.run(app, host=config.system.host, port=config.system.port)
+    except KeyboardInterrupt:
+        exit(0)

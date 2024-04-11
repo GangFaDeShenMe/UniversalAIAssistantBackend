@@ -119,7 +119,7 @@ class EdgeTTSConfig(BaseSettings):
 
 
 class Db(BaseSettings):
-    url: str = "sqlite+aiosqlite:///database.db"
+    url: str = "sqlite+aiosqlite:///../database.db"
     '''https://www.osgeo.cn/sqlalchemy/core/engines.html#database-urls'''
 
 
@@ -214,18 +214,19 @@ class Config(BaseSettings):
     referral: Referral = Referral()
 
     @staticmethod
-    def load_config() -> Config:
+    def load_config(config_path: str = "../config.toml") -> Config:
         logger.info("Loading config...")
-
         try:
-            with open("../config.toml", "rb") as f:
+            with open(config_path, "rb") as f:
                 if best_guess := from_bytes(f.read()).best():
-                    config_data = toml.loads(str(best_guess))
-                    return Config.validate(config_data)
+                    config_data = Config.validate(toml.loads(str(best_guess)))
+                    logger.success("Config loaded")
+                    return config_data
                 else:
                     raise ValueError("Unable to parse config")
         except FileNotFoundError:
-            logger.error("No 'config.toml' file detected")
+
+            logger.error(f"No 'config.toml' file detected at {os.path.join(os.getcwd(), config_path)}")
             exit(-1)
         except Exception as e:
             logger.exception(e)
@@ -234,4 +235,3 @@ class Config(BaseSettings):
 
 
 config = Config.load_config()
-logger.success("Config loaded")
